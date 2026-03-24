@@ -14,12 +14,12 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::config::MAX_APP_NUM;
+use crate::config::{MAX_APP_NUM, MAX_SYSCALL_NUM};
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
 use lazy_static::*;
 use switch::__switch;
-pub use task::{TaskControlBlock, TaskStatus, MAX_SYSCALL_NUM};
+pub use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
 
@@ -45,6 +45,8 @@ pub struct TaskManagerInner {
     tasks: [TaskControlBlock; MAX_APP_NUM],
     /// id of current `Running` task
     current_task: usize,
+    /// the time evoking the syscall
+    cnt_syscall_evoke: [[usize; MAX_SYSCALL_NUM]; MAX_APP_NUM],
 }
 
 lazy_static! {
@@ -54,7 +56,6 @@ lazy_static! {
         let mut tasks = [TaskControlBlock {
             task_cx: TaskContext::zero_init(),
             task_status: TaskStatus::UnInit,
-            cnt_syscall_evoke: [0usize; MAX_SYSCALL_NUM],
         }; MAX_APP_NUM];
         for (i, task) in tasks.iter_mut().enumerate() {
             task.task_cx = TaskContext::goto_restore(init_app_cx(i));
@@ -66,6 +67,7 @@ lazy_static! {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
+                    cnt_syscall_evoke: [[0usize; MAX_SYSCALL_NUM]; MAX_APP_NUM],
                 })
             },
         }
@@ -140,12 +142,12 @@ impl TaskManager {
     fn add_current_evoke(&self, syscall_id: usize) {
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
-        inner.tasks[current].cnt_syscall_evoke[syscall_id] += 1;
+        inner.cnt_syscall_evoke[current][syscall_id] += 1;
     }
     fn ask_current_evoke(&self, syscall_id: usize) -> isize {
         let inner = self.inner.exclusive_access();
         let current = inner.current_task;
-        inner.tasks[current].cnt_syscall_evoke[syscall_id] as isize
+        inner.cnt_syscall_evoke[current][syscall_id] as isize
     }
 }
 
