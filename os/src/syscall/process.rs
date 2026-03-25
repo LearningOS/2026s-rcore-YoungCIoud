@@ -1,8 +1,10 @@
 //! Process management syscalls
-use crate::task::{change_program_brk, exit_current_and_run_next, suspend_current_and_run_next};
+use core::mem::size_of;
+
+use crate::{mm::{PTEFlags, read_data_buffers, translated_byte_buffer, write_data_buffers}, task::{ask_current_syscall_cnt, change_program_brk, current_user_token, exit_current_and_run_next, suspend_current_and_run_next}, timer::get_time_us};
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct TimeVal {
     pub sec: usize,
     pub usec: usize,
@@ -25,16 +27,66 @@ pub fn sys_yield() -> isize {
 /// YOUR JOB: get time with second and microsecond
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
-    -1
+    let us = get_time_us();
+
+    let tv = TimeVal {
+        sec: us / 1_000_000,
+        usec: us % 1_000_000,
+    };
+
+    let ptr = ts as *mut u8;
+    let len = size_of::<TimeVal>();
+    if let Some(buffers) = translated_byte_buffer(
+        current_user_token(),
+        ptr,
+        len,
+        PTEFlags::U | PTEFlags::W,
+    ) {
+        write_data_buffers(tv, buffers);
+        0
+    } else {
+        -1
+    }
 }
 
 /// TODO: Finish sys_trace to pass testcases
 /// HINT: You might reimplement it with virtual memory management.
-pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
-    trace!("kernel: sys_trace");
-    -1
+pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
+    match trace_request {
+        0 => {
+            // trace_request 为 0，则 id 应被视作 *const u8 ，表示读取当前任务 id 地址处一个字节的无符号整数值
+            if let Some(buffers) = translated_byte_buffer(
+                current_user_token(),
+                id as *const u8,
+                1,
+                PTEFlags::U | PTEFlags::R
+            ) {
+                read_data_buffers::<u8>(&buffers) as isize
+            } else {
+                -1
+            }
+        }
+        1 => {
+            // trace_request 为 1，则 id 应被视作 *mut u8 ，表示写入 data
+             if let Some(buffers) = translated_byte_buffer(
+                current_user_token(),
+                id as *const u8,
+                1,
+                PTEFlags::U | PTEFlags::W
+            ) {
+                write_data_buffers(data as u8, buffers);
+                0
+            } else {
+                -1
+            }
+        }
+        2 => {
+            ask_current_syscall_cnt(id) as isize
+        }
+        _ => { panic!("Unsupported trace_request: {}", trace_request) }
+    }
 }
 
 // YOUR JOB: Implement mmap.

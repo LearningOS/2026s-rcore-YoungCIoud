@@ -1,5 +1,7 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 
+use core::mem::{MaybeUninit, size_of};
+
 use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -158,7 +160,7 @@ impl PageTable {
 }
 
 /// Translate&Copy a ptr[u8] array with LENGTH len to a mutable u8 Vec through page table
-pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&'static mut [u8]> {
+pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize, permit_need: PTEFlags) -> Option<Vec<&'static mut [u8]>> {
     let page_table = PageTable::from_token(token);
     let mut start = ptr as usize;
     let end = start + len;
@@ -166,7 +168,15 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
     while start < end {
         let start_va = VirtAddr::from(start);
         let mut vpn = start_va.floor();
-        let ppn = page_table.translate(vpn).unwrap().ppn();
+        let pte = page_table.translate(vpn).unwrap();
+        let ppn = pte.ppn();
+        let permit_owned = pte.flags();
+        
+        // 验证权限
+        if !permit_owned.contains(permit_need) {
+            return None;
+        }
+
         vpn.step();
         let mut end_va: VirtAddr = vpn.into();
         end_va = end_va.min(VirtAddr::from(end));
@@ -177,5 +187,40 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
         }
         start = end_va.into();
     }
-    v
+    Some(v)
+}
+
+/// write data to the mutable u8 Vec
+pub fn write_data_buffers<T: Copy>(data: T, buffers: Vec<&mut [u8]>) {
+    let src = unsafe {
+        core::slice::from_raw_parts(&data as *const T as *const u8, size_of::<T>())
+    };
+
+    let mut cur = 0;
+    for buffer in buffers {
+        let len = buffer.len();
+        buffer.copy_from_slice(&src[cur..cur + len]);
+        cur += len;
+    }
+
+    assert_eq!(cur, size_of::<T>());
+}
+
+/// read data from a mutable u8 Vec
+pub fn read_data_buffers<T: Copy>(buffers: &Vec<&mut [u8]>) -> T {
+    let mut data = MaybeUninit::<T>::uninit();
+    let dst = unsafe {
+        core::slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u8, size_of::<T>())
+    };
+
+    let mut cur= 0;
+    for buffer in buffers {
+        let len = buffer.len();
+        dst[cur..cur + len].copy_from_slice(&buffer[..]);
+        cur += len;
+    }
+    
+    assert_eq!(cur, size_of::<T>());
+
+    unsafe { data.assume_init() }
 }

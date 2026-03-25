@@ -14,6 +14,7 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
@@ -46,6 +47,8 @@ struct TaskManagerInner {
     tasks: Vec<TaskControlBlock>,
     /// id of current `Running` task
     current_task: usize,
+    /// time the syscall evoked
+    cnt_syscall: Vec<[usize; MAX_SYSCALL_NUM]>,
 }
 
 lazy_static! {
@@ -55,8 +58,10 @@ lazy_static! {
         let num_app = get_num_app();
         println!("num_app = {}", num_app);
         let mut tasks: Vec<TaskControlBlock> = Vec::new();
+        let mut cnt_syscall = Vec::new();
         for i in 0..num_app {
             tasks.push(TaskControlBlock::new(get_app_data(i), i));
+            cnt_syscall.push([0usize; MAX_SYSCALL_NUM]);
         }
         TaskManager {
             num_app,
@@ -64,6 +69,7 @@ lazy_static! {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
+                    cnt_syscall,
                 })
             },
         }
@@ -131,6 +137,20 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let cur = inner.current_task;
         inner.tasks[cur].change_program_brk(size)
+    }
+
+    /// Add the time the syscall called by current task
+    pub fn add_current_syscall_cnt(&self, syscall_id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.cnt_syscall[cur][syscall_id] += 1;
+    }
+    
+    /// Assk the time the syscall called by current task
+    pub fn ask_current_syscall_cnt(&self, syscall_id: usize) -> usize {
+        let inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.cnt_syscall[cur][syscall_id]
     }
 
     /// Switch current `Running` task to the task we have found,
@@ -201,4 +221,14 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+/// Add the time the syscall called by current task
+pub fn add_current_syscall_cnt(syscall_id: usize) {
+    TASK_MANAGER.add_current_syscall_cnt(syscall_id);
+}
+
+/// Ask the time the syscall called by current task
+pub fn ask_current_syscall_cnt(syscall_id: usize) -> usize{
+    TASK_MANAGER.ask_current_syscall_cnt(syscall_id)
 }
