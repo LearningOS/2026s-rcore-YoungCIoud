@@ -108,7 +108,7 @@ pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
     if (start % PAGE_SIZE != 0) || (prot & !0x7 != 0) || (prot & 0x7 == 0) {
         return -1;
     }
-    let _len = if len % PAGE_SIZE != 0 {
+    let len = if len % PAGE_SIZE != 0 {
         len + PAGE_SIZE - len % PAGE_SIZE
     } else {
         len

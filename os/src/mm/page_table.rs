@@ -187,7 +187,11 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize, permit_n
     while start < end {
         let start_va = VirtAddr::from(start);
         let mut vpn = start_va.floor();
-        let pte = page_table.translate(vpn).unwrap();
+        let pte = if let Some(pte) = page_table.translate(vpn) {
+            pte
+        } else {
+            return None;
+        };
         let ppn = pte.ppn();
         let permit_owned = pte.flags();
         
