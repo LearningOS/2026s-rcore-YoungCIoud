@@ -1,7 +1,5 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 
-use core::mem::{MaybeUninit, size_of};
-
 use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -157,6 +155,27 @@ impl PageTable {
     pub fn token(&self) -> usize {
         8usize << 60 | self.root_ppn.0
     }
+
+    /// return 0 if vpns in [start, start + len) are all unmmaped
+    /// need start, len % PAGE_SIZE = 0
+    pub fn chk_range_unmapped(&self, start: usize, len: usize) -> isize {
+        for vpn in start..start + len {
+            if self.translate(vpn.into()).is_none() {
+                return -1;
+            }
+        }
+        0
+    }
+    /// return 0 if vpns in [start, start + len) are all maped
+    /// need start, len % PAGE_SIZE = 0
+    pub fn chk_range_mapped(&self, start: usize, len: usize) -> isize {
+        for vpn in start..start + len {
+            if self.translate(vpn.into()).is_some() {
+                return -1;
+            }
+        }
+        0
+    }
 }
 
 /// Translate&Copy a ptr[u8] array with LENGTH len to a mutable u8 Vec through page table
@@ -188,39 +207,4 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize, permit_n
         start = end_va.into();
     }
     Some(v)
-}
-
-/// write data to the mutable u8 Vec
-pub fn write_data_buffers<T: Copy>(data: T, buffers: Vec<&mut [u8]>) {
-    let src = unsafe {
-        core::slice::from_raw_parts(&data as *const T as *const u8, size_of::<T>())
-    };
-
-    let mut cur = 0;
-    for buffer in buffers {
-        let len = buffer.len();
-        buffer.copy_from_slice(&src[cur..cur + len]);
-        cur += len;
-    }
-
-    assert_eq!(cur, size_of::<T>());
-}
-
-/// read data from a mutable u8 Vec
-pub fn read_data_buffers<T: Copy>(buffers: &Vec<&mut [u8]>) -> T {
-    let mut data = MaybeUninit::<T>::uninit();
-    let dst = unsafe {
-        core::slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u8, size_of::<T>())
-    };
-
-    let mut cur= 0;
-    for buffer in buffers {
-        let len = buffer.len();
-        dst[cur..cur + len].copy_from_slice(&buffer[..]);
-        cur += len;
-    }
-    
-    assert_eq!(cur, size_of::<T>());
-
-    unsafe { data.assume_init() }
 }

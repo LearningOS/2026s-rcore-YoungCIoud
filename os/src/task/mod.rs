@@ -16,6 +16,7 @@ mod task;
 
 use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::MapPermission;
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
@@ -146,11 +147,45 @@ impl TaskManager {
         inner.cnt_syscall[cur][syscall_id] += 1;
     }
     
-    /// Assk the time the syscall called by current task
+    /// Ask the time the syscall called by current task
     pub fn ask_current_syscall_cnt(&self, syscall_id: usize) -> usize {
         let inner = self.inner.exclusive_access();
         let cur = inner.current_task;
         inner.cnt_syscall[cur][syscall_id]
+    }
+
+    /// map vpn[start, start + len) to ppn
+    pub fn current_mmap(&self, start: usize, len: usize, prot: usize) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let cur= inner.current_task;
+        let memory_set = &mut inner.tasks[cur].memory_set;
+        if memory_set.chk_range_unmapped(start, len) != 0 {
+            return -1;
+        }
+
+        let mut perm = MapPermission::U;
+        if prot & 1 == 1 {
+            perm |= MapPermission::R;
+        }
+        if prot & 2 == 1 {
+            perm |= MapPermission::W;
+        }
+        if prot & 4 == 1 {
+            perm |= MapPermission::X;
+        }
+        memory_set.insert_framed_area(start.into(), (start + len).into(), perm);
+        0
+    }
+
+    /// unmap vpn[start, start + len]
+    pub fn current_munmap(&self, start: usize, len: usize) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let cur= inner.current_task;
+        let memory_set = &mut inner.tasks[cur].memory_set;
+        if memory_set.chk_range_mapped(start, len) != 0 {
+            return -1;
+        }
+        -1
     }
 
     /// Switch current `Running` task to the task we have found,
@@ -231,4 +266,14 @@ pub fn add_current_syscall_cnt(syscall_id: usize) {
 /// Ask the time the syscall called by current task
 pub fn ask_current_syscall_cnt(syscall_id: usize) -> usize{
     TASK_MANAGER.ask_current_syscall_cnt(syscall_id)
+}
+
+/// map vpn[start, start + len) to ppn
+pub fn current_mmap(start: usize, len: usize, prot: usize) -> isize {
+    TASK_MANAGER.current_mmap(start, len, prot)
+}
+
+/// unmap vpn[start, start + len]
+pub fn current_munmap(start: usize, len: usize) -> isize {
+    TASK_MANAGER.current_munmap(start, len)
 }

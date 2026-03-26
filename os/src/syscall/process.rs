@@ -1,7 +1,20 @@
 //! Process management syscalls
 use core::mem::size_of;
 
-use crate::{mm::{PTEFlags, read_data_buffers, translated_byte_buffer, write_data_buffers}, task::{ask_current_syscall_cnt, change_program_brk, current_user_token, exit_current_and_run_next, suspend_current_and_run_next}, timer::get_time_us};
+use crate::{
+    config::PAGE_SIZE,
+    mm::{
+        PTEFlags,
+        translated_byte_buffer
+    },
+    task::{
+        ask_current_syscall_cnt, change_program_brk, current_mmap, current_user_token, exit_current_and_run_next, suspend_current_and_run_next
+    },
+    timer::get_time_us,
+    tools::{
+        read_data_buffers, write_data_buffers
+    }
+};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -90,9 +103,18 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
 }
 
 // YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
+pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
     trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
-    -1
+    if (start % PAGE_SIZE != 0) || (prot & !0x7 != 0) || (prot & 0x7 == 0) {
+        return -1;
+    }
+    let _len = if len % PAGE_SIZE != 0 {
+        len + PAGE_SIZE - len % PAGE_SIZE
+    } else {
+        len
+    };
+
+    current_mmap(start, len, prot)
 }
 
 // YOUR JOB: Implement munmap.

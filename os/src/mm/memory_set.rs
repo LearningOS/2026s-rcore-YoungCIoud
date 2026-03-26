@@ -262,6 +262,18 @@ impl MemorySet {
             false
         }
     }
+
+    /// return 0 if vpns in [start, start + len) are all unmaped
+    /// need start, len % PAGE_SIZE = 0
+    pub fn chk_range_unmapped(&self, start: usize, len: usize) -> isize {
+        self.page_table.chk_range_unmapped(start, len)
+    }
+
+    /// return 0 if vpns in [start, start + len) are all maped
+    /// need start, len % PAGE_SIZE = 0
+    pub fn chk_range_mapped(&self, start: usize, len: usize) -> isize {
+        self.page_table.chk_range_mapped(start, len)
+    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
