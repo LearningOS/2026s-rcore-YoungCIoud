@@ -185,7 +185,9 @@ impl TaskManager {
         if memory_set.chk_range_mapped(start, len) != 0 {
             return -1;
         }
-        -1
+        
+        memory_set.shrink_to(start.into(), start.into());
+        0
     }
 
     /// Switch current `Running` task to the task we have found,

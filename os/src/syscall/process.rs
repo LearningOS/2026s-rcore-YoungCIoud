@@ -8,7 +8,7 @@ use crate::{
         translated_byte_buffer
     },
     task::{
-        ask_current_syscall_cnt, change_program_brk, current_mmap, current_user_token, exit_current_and_run_next, suspend_current_and_run_next
+        ask_current_syscall_cnt, change_program_brk, current_mmap, current_munmap, current_user_token, exit_current_and_run_next, suspend_current_and_run_next
     },
     timer::get_time_us,
     tools::{
@@ -67,6 +67,7 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
 /// TODO: Finish sys_trace to pass testcases
 /// HINT: You might reimplement it with virtual memory management.
 pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
+    trace!("kernel: sys_trace");
     match trace_request {
         0 => {
             // trace_request 为 0，则 id 应被视作 *const u8 ，表示读取当前任务 id 地址处一个字节的无符号整数值
@@ -104,7 +105,7 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
 
 // YOUR JOB: Implement mmap.
 pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
-    trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
+    trace!("kernel: sys_mmap");
     if (start % PAGE_SIZE != 0) || (prot & !0x7 != 0) || (prot & 0x7 == 0) {
         return -1;
     }
@@ -118,9 +119,18 @@ pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
 }
 
 // YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
-    -1
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    trace!("kernel: sys_munmap");
+    if start % PAGE_SIZE != 0 {
+        return -1;
+    }
+    let len = if len % PAGE_SIZE != 0 {
+        len + PAGE_SIZE - len % PAGE_SIZE
+    } else {
+        len
+    };
+
+    current_munmap(start, len)
 }
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {
