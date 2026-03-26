@@ -164,13 +164,13 @@ impl TaskManager {
         }
 
         let mut perm = MapPermission::U;
-        if prot & 1 == 1 {
+        if prot & 1 != 0 {
             perm |= MapPermission::R;
         }
-        if prot & 2 == 1 {
+        if prot & 2 != 0 {
             perm |= MapPermission::W;
         }
-        if prot & 4 == 1 {
+        if prot & 4 != 0 {
             perm |= MapPermission::X;
         }
         memory_set.insert_framed_area(start.into(), (start + len).into(), perm);

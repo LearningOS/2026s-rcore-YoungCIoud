@@ -159,9 +159,13 @@ impl PageTable {
     /// return 0 if vpns in [start, start + len) are all unmmaped
     /// need start, len % PAGE_SIZE = 0
     pub fn chk_range_unmapped(&self, start: usize, len: usize) -> isize {
-        for vpn in start..start + len {
-            if self.translate(vpn.into()).is_none() {
-                return -1;
+        let start_vpn = VirtAddr::from(start).floor().0;
+        let end_vpn = VirtAddr::from(start + len).ceil().0;
+        for vpn in start_vpn..end_vpn {
+            if let Some(pte) = self.translate(vpn.into()) {
+                if pte.is_valid() {
+                    return -1;
+                }
             }
         }
         0
@@ -169,8 +173,14 @@ impl PageTable {
     /// return 0 if vpns in [start, start + len) are all maped
     /// need start, len % PAGE_SIZE = 0
     pub fn chk_range_mapped(&self, start: usize, len: usize) -> isize {
-        for vpn in start..start + len {
-            if self.translate(vpn.into()).is_some() {
+        let start_vpn = VirtAddr::from(start).floor().0;
+        let end_vpn = VirtAddr::from(start + len).ceil().0;
+        for vpn in start_vpn..end_vpn {
+            if let Some(pte) = self.translate(vpn.into()) {
+                if !pte.is_valid() {
+                    return -1;
+                }
+            } else {
                 return -1;
             }
         }
