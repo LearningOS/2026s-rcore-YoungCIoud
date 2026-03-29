@@ -1,9 +1,9 @@
 //! Types related to task management & Functions for completely changing TCB
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::TRAP_CONTEXT_BASE;
+use crate::config::{PAGE_SIZE, TRAP_CONTEXT_BASE};
 use crate::fs::{File, Stdin, Stdout};
-use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
+use crate::mm::{KERNEL_SPACE, MapPermission, MemorySet, PhysPageNum, VirtAddr};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
@@ -260,6 +260,64 @@ impl TaskControlBlock {
         } else {
             None
         }
+    }
+
+    /// mmap [start, start + len) for task
+    pub fn mmap(&self, start: usize, len: usize, prot: usize) -> isize {
+        if (start % PAGE_SIZE != 0) || (prot & !0x7 != 0) || (prot & 0x7 == 0) {
+            return -1;
+        }
+
+        let len = (len + PAGE_SIZE - 1) / PAGE_SIZE * PAGE_SIZE;
+
+        let memory_set = &mut self.inner_exclusive_access().memory_set;
+        for adr in (start..start + len).step_by(PAGE_SIZE) {
+            if let Some(ppn) = memory_set.translate((adr / PAGE_SIZE).into()) {
+                if ppn.is_valid() {
+                    return -1;
+                }
+            }
+        }
+        
+        let start_va: VirtAddr =  start.into();
+        let end_va: VirtAddr = (start + len).into();
+        let mut perm = MapPermission::U;
+        if prot & 1 != 0 {
+            perm |= MapPermission::R;
+        }
+        if prot & 2 != 0 {
+            perm |= MapPermission::W;
+        }
+        if prot & 4 != 0 {
+            perm |= MapPermission::X;
+        }
+        memory_set.insert_framed_area(start_va, end_va, perm);
+        0
+    }
+
+    /// mmap [start, start + len) for task
+    pub fn munmap(&self, start: usize, len: usize) -> isize {
+        if start % PAGE_SIZE != 0 {
+            return -1;
+        }
+
+        let len = (len + PAGE_SIZE - 1) / PAGE_SIZE * PAGE_SIZE;
+
+        let memory_set = &mut self.inner_exclusive_access().memory_set;
+        for adr in (start..start + len).step_by(PAGE_SIZE) {
+            if let Some(ppn) = memory_set.translate((adr / PAGE_SIZE).into()) {
+                if !ppn.is_valid() {
+                    return -1;
+                }
+            } else {
+                return -1;
+            }
+        }
+
+        let start_va: VirtAddr =  start.into();
+        memory_set.shrink_to(start_va, start_va);
+
+        0
     }
 }
 
