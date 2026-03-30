@@ -7,22 +7,12 @@ use crate::{
     fs::{
         OpenFlags,
         open_file
-    },
-    
-    mm::{
+    }, mm::{
         translated_byte_buffer,
         translated_refmut,translated_str
-    },
-    
-    task::{
-        add_task,
-        current_task,
-        current_user_token,
-        exit_current_and_run_next,
-        suspend_current_and_run_next,
-    },
-    timer::get_time_us,
-    tools::write_data_buffers
+    }, task::{
+        TaskControlBlock, add_task, current_task, current_user_token, exit_current_and_run_next, suspend_current_and_run_next
+    }, timer::get_time_us, tools::write_data_buffers
 };
 
 #[repr(C)]
@@ -176,12 +166,27 @@ pub fn sys_sbrk(size: i32) -> isize {
 
 /// YOUR JOB: Implement spawn.
 /// HINT: fork + exec =/= spawn
-pub fn sys_spawn(_path: *const u8) -> isize {
+pub fn sys_spawn(path: *const u8) -> isize {
     trace!(
-        "kernel:pid[{}] sys_spawn NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_spawn",
         current_task().unwrap().pid.0
     );
-    -1
+    let path = translated_str(current_user_token(), path);
+    if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
+        let parent = current_task().unwrap();
+
+        let data = app_inode.read_all();
+        let task = Arc::new(TaskControlBlock::new(data.as_slice()));
+
+        task.inner_exclusive_access().parent = Some(Arc::downgrade(&parent));
+        parent.inner_exclusive_access().children.push(task.clone());
+
+        add_task(task.clone());
+
+        task.pid.0 as isize
+    } else {
+        -1
+    }
 }
 
 // YOUR JOB: Set task priority.
