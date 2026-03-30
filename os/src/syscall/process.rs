@@ -4,11 +4,9 @@ use core::mem::size_of;
 use alloc::sync::Arc;
 
 use crate::{
-    loader::get_app_data_by_name,
-    mm::{translated_byte_buffer, translated_refmut, translated_str},
-    task::{
+    config::BIG_STRIDE, loader::get_app_data_by_name, mm::{translated_byte_buffer, translated_refmut, translated_str}, task::{
         TaskControlBlock, add_task, current_task, current_user_token, exit_current_and_run_next, suspend_current_and_run_next
-    }, timer::get_time_us, tools::write_data_buffers,
+    }, timer::get_time_us, tools::write_data_buffers
 };
 
 #[repr(C)]
@@ -163,7 +161,7 @@ pub fn sys_sbrk(size: i32) -> isize {
 /// HINT: fork + exec =/= spawn
 pub fn sys_spawn(path: *const u8) -> isize {
     trace!(
-        "kernel:pid[{}] sys_spawn NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_spawn",
         current_task().unwrap().pid.0
     );
     let path = translated_str(current_user_token(), path);
@@ -183,10 +181,15 @@ pub fn sys_spawn(path: *const u8) -> isize {
 }
 
 // YOUR JOB: Set task priority.
-pub fn sys_set_priority(_prio: isize) -> isize {
+pub fn sys_set_priority(prio: isize) -> isize {
     trace!(
-        "kernel:pid[{}] sys_set_priority NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_set_priority",
         current_task().unwrap().pid.0
     );
-    -1
+    if prio < 2 {
+        -1
+    } else {
+        current_task().unwrap().inner_exclusive_access().pass = BIG_STRIDE / (prio as usize);
+        prio
+    }
 }
