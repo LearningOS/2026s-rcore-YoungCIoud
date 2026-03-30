@@ -7,8 +7,7 @@ use crate::{
     loader::get_app_data_by_name,
     mm::{translated_byte_buffer, translated_refmut, translated_str},
     task::{
-        add_task, current_task, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next,
+        TaskControlBlock, add_task, current_task, current_user_token, exit_current_and_run_next, suspend_current_and_run_next
     }, timer::get_time_us, tools::write_data_buffers,
 };
 
@@ -109,7 +108,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!(
-        "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_get_time",
         current_task().unwrap().pid.0
     );
 
@@ -134,7 +133,6 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     0
 }
 
-/// YOUR JOB: Implement mmap.
 pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
     trace!(
         "kernel:pid[{}] sys_mmap",
@@ -143,7 +141,6 @@ pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
     current_task().unwrap().mmap(start, len, prot)
 }
 
-/// YOUR JOB: Implement munmap.
 pub fn sys_munmap(start: usize, len: usize) -> isize {
     trace!(
         "kernel:pid[{}] sys_munmap",
@@ -164,12 +161,25 @@ pub fn sys_sbrk(size: i32) -> isize {
 
 /// YOUR JOB: Implement spawn.
 /// HINT: fork + exec =/= spawn
-pub fn sys_spawn(_path: *const u8) -> isize {
+pub fn sys_spawn(path: *const u8) -> isize {
     trace!(
         "kernel:pid[{}] sys_spawn NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let path = translated_str(current_user_token(), path);
+    if let Some(data) = get_app_data_by_name(path.as_str()) {
+        let parent = current_task().unwrap();
+        let task = Arc::new(TaskControlBlock::new(data));
+
+        task.inner_exclusive_access().parent = Some(Arc::downgrade(&parent));
+        parent.inner_exclusive_access().children.push(task.clone());
+
+        add_task(task.clone());
+
+        task.pid.0 as isize
+    } else {
+        -1
+    }
 }
 
 // YOUR JOB: Set task priority.
