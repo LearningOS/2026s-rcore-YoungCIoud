@@ -2,10 +2,10 @@
 
 use core::mem::size_of;
 
-use crate::fs::{OSInode, OpenFlags, Stat, linkat, open_file, unlinkat};
+use crate::fs::{OpenFlags, Stat, linkat, open_file, unlinkat};
 use crate::mm::{translated_byte_buffer, translated_str, UserBuffer};
 use crate::task::{current_task, current_user_token};
-use crate::tools::write_data_buffers;
+// use crate::tools::write_data_buffers;
 
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
     trace!("kernel:pid[{}] sys_write", current_task().unwrap().pid.0);
@@ -93,21 +93,21 @@ pub fn sys_fstat(fd: usize, st: *mut Stat) -> isize {
     if inner.fd_table[fd].is_none() {
         return -1;
     }
+    let file = inner.fd_table[fd].clone();
+    drop(inner);  // 释放 TCB 的借用
 
-    if let Some(file) = &inner.fd_table[fd] {
-        let file = file as *const _ as *const OSInode;
-        let file = unsafe { file.read_volatile() };
-        let buffers = translated_byte_buffer(
-            current_user_token(),
-            st as *const u8,
-            size_of::<Stat>()
-        );
-
-        write_data_buffers(
-            file.stat(),
-            buffers,
-        );
-        0
+    if let Some(file) = file {
+        if let Some(stat) = file.stat() {
+            let buffers = translated_byte_buffer(
+                current_user_token(),
+                st as *const u8,
+                size_of::<Stat>()
+            );
+            crate::tools::write_data_buffers(stat, buffers);
+            0
+        } else {
+            -1
+        }
     } else {
         -1
     }

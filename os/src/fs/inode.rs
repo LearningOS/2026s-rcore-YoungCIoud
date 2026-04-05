@@ -190,4 +190,7 @@ impl File for OSInode {
         }
         total_write_size
     }
+    fn stat(&self) -> Option<Stat> {
+        Some(self.inner.exclusive_access().stat())
+    }
 }
