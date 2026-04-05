@@ -1,8 +1,11 @@
 //! File and filesystem-related syscalls
 
-use crate::fs::{OpenFlags, Stat, linkat, open_file, unlinkat};
+use core::mem::size_of;
+
+use crate::fs::{OSInode, OpenFlags, Stat, linkat, open_file, unlinkat};
 use crate::mm::{translated_byte_buffer, translated_str, UserBuffer};
 use crate::task::{current_task, current_user_token};
+use crate::tools::write_data_buffers;
 
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
     trace!("kernel:pid[{}] sys_write", current_task().unwrap().pid.0);
@@ -77,38 +80,37 @@ pub fn sys_close(fd: usize) -> isize {
 }
 
 /// YOUR JOB: Implement fstat.
-pub fn sys_fstat(_fd: usize, _st: *mut Stat) -> isize {
+pub fn sys_fstat(fd: usize, st: *mut Stat) -> isize {
     trace!(
         "kernel:pid[{}] sys_fstat",
         current_task().unwrap().pid.0
     );
-    // let task = current_task().unwrap();
-    // let inner = task.inner_exclusive_access();
-    // if fd >= inner.fd_table.len() {
-    //     return -1;
-    // }
-    // if inner.fd_table[fd].is_none() {
-    //     return -1;
-    // }
+    let task = current_task().unwrap();
+    let inner = task.inner_exclusive_access();
+    if fd >= inner.fd_table.len() {
+        return -1;
+    }
+    if inner.fd_table[fd].is_none() {
+        return -1;
+    }
 
-    // if let Some(file) = &inner.fd_table[fd] {
-    //     let file = file as *const _ as *const OSInode;
-    //     let file = unsafe { file.read_volatile() };
-    //     let buffers = translated_byte_buffer(
-    //         current_user_token(),
-    //         st as *const u8,
-    //         size_of::<Stat>()
-    //     );
+    if let Some(file) = &inner.fd_table[fd] {
+        let file = file as *const _ as *const OSInode;
+        let file = unsafe { file.read_volatile() };
+        let buffers = translated_byte_buffer(
+            current_user_token(),
+            st as *const u8,
+            size_of::<Stat>()
+        );
 
-    //     write_data_buffers(
-    //         file.stat(),
-    //         buffers,
-    //     );
-    //     0
-    // } else {
-    //     -1
-    // }
-    -1
+        write_data_buffers(
+            file.stat(),
+            buffers,
+        );
+        0
+    } else {
+        -1
+    }
 }
 
 /// YOUR JOB: Implement linkat.

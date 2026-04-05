@@ -63,7 +63,19 @@ impl OSInode {
 impl OSInodeInner {
     /// get inode stat
     pub fn stat(&self) -> Stat {
-        todo!()
+        self.inode.read_disk_inode(|disk_inode| {
+            Stat {
+                dev: 0,
+                ino: 0,
+                mode: if disk_inode.is_dir() {
+                    crate::fs::StatMode::DIR
+                } else {
+                    crate::fs::StatMode::FILE
+                },
+                nlink: disk_inode.nlink,
+                pad: [0; 7],
+            }
+        })
     }
 }
 
