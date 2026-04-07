@@ -50,6 +50,7 @@ pub mod syscall;
 pub mod task;
 pub mod timer;
 pub mod trap;
+pub mod tools;
 
 use core::arch::global_asm;
 
