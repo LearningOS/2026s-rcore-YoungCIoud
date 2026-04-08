@@ -213,15 +213,6 @@ fn guarantee_capacity() {
     let res_num = inner.available.len();
     let thread_num = inner.tasks.len();
 
-    for alloc in &mut inner.allocation {
-        while alloc.len() < res_num {
-            alloc.push(0);
-        }
-    }
-    while inner.allocation.len() < thread_num {
-        inner.allocation.push(vec![0usize; res_num]);
-    }
-
     for need in &mut inner.need {
         while need.len() < res_num {
             need.push(0);
@@ -256,55 +247,87 @@ pub fn add_resource(rid: usize, num: usize) {
 }
 
 /// 线程 tid 需要 num 个 rid 资源
-pub fn add_resource_need(tid: usize, rid: usize, num: usize) {
+pub fn add_resource_need(tid: usize, rid: usize, num: isize) {
     guarantee_capacity();
 
     let process = current_process();
     let mut inner = process.inner_exclusive_access();
 
-    inner.need[tid][rid] += num;
+    if num < 0 {
+        let num = -num;
+        inner.need[tid][rid] -= num as usize;
+    } else {
+        inner.need[tid][rid] += num as usize;
+    }
 }
 
 /// check if tid can get resource safely
-pub fn check_deadlock(tid: usize) -> bool {
+pub fn check_deadlock() -> bool {
     guarantee_capacity();
 
     let process = current_process();
     let inner = process.inner_exclusive_access();
     
-    let res_num = inner.available.len();
-    for rid in 0..res_num {
-        if inner.need[tid][rid] > inner.available[rid] {
+    let need = &inner.need;
+    let work = &inner.available;
+    let mut finish: Vec<_> = inner
+        .tasks
+        .clone()
+        .iter()
+        .map(|task| task.is_none())
+        .collect();
+    let thread_num = finish.len();
+    let res_num = work.len();
+
+    loop {
+        let mut found: Option<_> = None;
+        'outter: for tid in 0..thread_num {
+            if finish[tid] {
+                continue;
+            }
+
+            for rid in 0..res_num {
+                if need[tid][rid] > work[rid] {
+                    continue 'outter;
+                }
+            }
+
+            found = Some(tid);
+        }
+
+        if let Some(tid) = found {
+            finish[tid] = true;
+        } else if finish.iter().find(|ok| !*ok).is_some() {
             return false;
+        } else {
+            return true;
         }
     }
-
-    true
 }
 
-/// 分配 num 个 rid 资源给线程 tid
-pub fn alloc_resource(tid: usize, rid: usize, num: usize) {
-    guarantee_capacity();
+// /// 分配 num 个 rid 资源给线程 tid
+// pub fn alloc_resource(tid: usize, rid: usize, num: usize) {
+//     guarantee_capacity();
 
-    let process = current_process();
-    let mut inner = process.inner_exclusive_access();
+//     let process = current_process();
+//     let mut inner = process.inner_exclusive_access();
 
-    assert!(inner.available[rid] >= num);
+//     assert!(inner.available[rid] >= num);
 
-    inner.available[rid] -= num;
-    inner.need[tid][rid] -= num;
-    inner.allocation[tid][rid] += num;
-}
+//     inner.available[rid] -= num;
+//     inner.need[tid][rid] -= num;
+//     inner.allocation[tid][rid] += num;
+// }
 
-/// tid运行结束，归还所有 tid 拥有的资源
-pub fn dealloc_resource(tid: usize) {
-    let process = current_process();
-    let mut inner = process.inner_exclusive_access();
+// /// tid运行结束，归还所有 tid 拥有的资源
+// pub fn dealloc_resource(tid: usize) {
+//     let process = current_process();
+//     let mut inner = process.inner_exclusive_access();
     
-    let res_num = inner.available.len();
-    for rid in 0..res_num {
-        inner.need[tid][rid] = 0;
-        inner.available[rid] += inner.allocation[tid][rid];
-        inner.allocation[tid][rid] = 0;
-    }
-}
+//     let res_num = inner.available.len();
+//     for rid in 0..res_num {
+//         inner.need[tid][rid] = 0;
+//         inner.available[rid] += inner.allocation[tid][rid];
+//         inner.allocation[tid][rid] = 0;
+//     }
+// }

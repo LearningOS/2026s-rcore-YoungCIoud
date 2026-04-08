@@ -53,9 +53,7 @@ pub struct ProcessControlBlockInner {
     pub deadlock_detect: bool,
     /// available resource
     pub available: Vec<usize>,
-    /// 表示每类资源已分配给每个线程的资源数
-    pub allocation: Vec<Vec<usize>>,
-    /// 表示每个线程已有的资源数
+    /// 表示每个线程需要的资源数
     pub need: Vec<Vec<usize>>,
 }
 
@@ -129,8 +127,7 @@ impl ProcessControlBlock {
                     condvar_list: Vec::new(),
                     deadlock_detect: false,
                     available: Vec::new(),
-                    allocation: vec![Vec::new(); 1],
-                    need: vec![Vec::new(); 1],
+                    need: Vec::new(),
                 })
             },
         });
@@ -262,8 +259,7 @@ impl ProcessControlBlock {
                     condvar_list: Vec::new(),
                     deadlock_detect: false,
                     available: Vec::new(),
-                    allocation: vec![Vec::new(); 1],
-                    need: vec![Vec::new(); 1],
+                    need: Vec::new(),
                 })
             },
         });

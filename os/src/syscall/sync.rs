@@ -1,5 +1,5 @@
 use crate::sync::{Condvar, Mutex, MutexBlocking, MutexSpin, Semaphore};
-use crate::task::{add_resource, add_resource_need, alloc_resource, block_current_and_run_next, check_deadlock, current_process, current_task, set_deadlock_detet};
+use crate::task::{add_resource, add_resource_need, block_current_and_run_next, check_deadlock, current_process, current_task, set_deadlock_detet};
 use crate::timer::{add_timer, get_time_ms};
 use alloc::sync::Arc;
 /// sleep syscall
@@ -85,9 +85,8 @@ pub fn sys_mutex_lock(mutex_id: usize) -> isize {
     drop(process);
 
     add_resource_need(tid, mutex_id, 1);
-    if check_deadlock(tid) {
-        alloc_resource(tid, mutex_id, 1);
-    } else {
+    if !check_deadlock() {
+        add_resource_need(tid, mutex_id, -1);
         return -0xdead;
     }
     mutex.lock();
@@ -195,9 +194,8 @@ pub fn sys_semaphore_down(sem_id: usize) -> isize {
     drop(process_inner);
 
     add_resource_need(tid, sem_id, 1);
-    if check_deadlock(tid) {
-        alloc_resource(tid, sem_id, 1);
-    } else {
+    if !check_deadlock() {
+        add_resource_need(tid, sem_id, -1);
         return -0xdead;
     }
     sem.down();
