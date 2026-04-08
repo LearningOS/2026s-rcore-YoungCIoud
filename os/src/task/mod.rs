@@ -213,6 +213,15 @@ fn guarantee_capacity() {
     let res_num = inner.available.len();
     let thread_num = inner.tasks.len();
 
+    // for allocation in &mut inner.allocation {
+    //     while allocation.len() < res_num {
+    //         allocation.push(0);
+    //     }
+    // }
+    // while inner.allocation.len() < thread_num {
+    //     inner.allocation.push(vec![0usize; res_num]);
+    // }
+
     for need in &mut inner.need {
         while need.len() < res_num {
             need.push(0);
@@ -305,29 +314,23 @@ pub fn check_deadlock() -> bool {
     }
 }
 
-// /// 分配 num 个 rid 资源给线程 tid
-// pub fn alloc_resource(tid: usize, rid: usize, num: usize) {
-//     guarantee_capacity();
+/// 分配 num 个 rid 资源给线程 tid
+pub fn alloc_resource(tid: usize, rid: usize, num: usize) {
+    guarantee_capacity();
 
-//     let process = current_process();
-//     let mut inner = process.inner_exclusive_access();
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
 
-//     assert!(inner.available[rid] >= num);
+    assert!(inner.available[rid] >= num);
 
-//     inner.available[rid] -= num;
-//     inner.need[tid][rid] -= num;
-//     inner.allocation[tid][rid] += num;
-// }
+    inner.available[rid] -= num;
+    inner.need[tid][rid] -= num;
+    // inner.allocation[tid][rid] += num;
+}
 
-// /// tid运行结束，归还所有 tid 拥有的资源
-// pub fn dealloc_resource(tid: usize) {
-//     let process = current_process();
-//     let mut inner = process.inner_exclusive_access();
-    
-//     let res_num = inner.available.len();
-//     for rid in 0..res_num {
-//         inner.need[tid][rid] = 0;
-//         inner.available[rid] += inner.allocation[tid][rid];
-//         inner.allocation[tid][rid] = 0;
-//     }
-// }
+/// 归还 rid 资源
+pub fn dealloc_resource(rid: usize, num: usize) {
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
+    inner.available[rid] += num;
+}
