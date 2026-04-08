@@ -23,6 +23,7 @@ use self::id::TaskUserRes;
 use crate::fs::{open_file, OpenFlags};
 use crate::task::manager::add_stopping_task;
 use crate::timer::remove_timer;
+use alloc::vec;
 use alloc::{sync::Arc, vec::Vec};
 use lazy_static::*;
 use manager::fetch_task;
@@ -203,4 +204,107 @@ pub fn remove_inactive_task(task: Arc<TaskControlBlock>) {
     remove_task(Arc::clone(&task));
     trace!("kernel: remove_inactive_task .. remove_timer");
     remove_timer(Arc::clone(&task));
+}
+
+fn guarantee_capacity() {
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
+
+    let res_num = inner.available.len();
+    let thread_num = inner.tasks.len();
+
+    for alloc in &mut inner.allocation {
+        while alloc.len() < res_num {
+            alloc.push(0);
+        }
+    }
+    while inner.allocation.len() < thread_num {
+        inner.allocation.push(vec![0usize; res_num]);
+    }
+
+    for need in &mut inner.need {
+        while need.len() < res_num {
+            need.push(0);
+        }
+    }
+    while inner.need.len() < thread_num {
+        inner.need.push(vec![0usize; res_num]);
+    }
+}
+
+/// enable/disable deadlock_detect
+pub fn set_deadlock_detet(enable: bool) -> isize {
+    current_process().inner_exclusive_access().deadlock_detect = enable;
+    0
+}
+
+/// true if deadlock_detect enabled
+pub fn deadlock_detect() -> bool {
+    current_process().inner_exclusive_access().deadlock_detect
+}
+
+/// add_resource
+pub fn add_resource(rid: usize, num: usize) {
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
+
+    while inner.available.len() <= rid {
+        inner.available.push(0);
+    }
+
+    inner.available[rid] = num;
+}
+
+/// 线程 tid 需要 num 个 rid 资源
+pub fn add_resource_need(tid: usize, rid: usize, num: usize) {
+    guarantee_capacity();
+
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
+
+    inner.need[tid][rid] += num;
+}
+
+/// check if tid can get resource safely
+pub fn check_deadlock(tid: usize) -> bool {
+    guarantee_capacity();
+
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    
+    let res_num = inner.available.len();
+    for rid in 0..res_num {
+        if inner.need[tid][rid] > inner.available[rid] {
+            return false;
+        }
+    }
+
+    true
+}
+
+/// 分配 num 个 rid 资源给线程 tid
+pub fn alloc_resource(tid: usize, rid: usize, num: usize) {
+    guarantee_capacity();
+
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
+
+    assert!(inner.available[rid] >= num);
+
+    inner.available[rid] -= num;
+    inner.need[tid][rid] -= num;
+    inner.allocation[tid][rid] += num;
+}
+
+/// tid运行结束，归还所有 tid 拥有的资源
+pub fn dealloc_resource(tid: usize) {
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
+    
+    let res_num = inner.available.len();
+    for rid in 0..res_num {
+        inner.need[tid][rid] = 0;
+        inner.available[rid] += inner.allocation[tid][rid];
+        inner.allocation[tid][rid] = 0;
+    }
 }

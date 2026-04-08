@@ -49,6 +49,14 @@ pub struct ProcessControlBlockInner {
     pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
     /// condvar list
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
+    /// deadlock_detect
+    pub deadlock_detect: bool,
+    /// available resource
+    pub available: Vec<usize>,
+    /// 表示每类资源已分配给每个线程的资源数
+    pub allocation: Vec<Vec<usize>>,
+    /// 表示每个线程已有的资源数
+    pub need: Vec<Vec<usize>>,
 }
 
 impl ProcessControlBlockInner {
@@ -119,6 +127,10 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    deadlock_detect: false,
+                    available: Vec::new(),
+                    allocation: vec![Vec::new(); 1],
+                    need: vec![Vec::new(); 1],
                 })
             },
         });
@@ -144,6 +156,9 @@ impl ProcessControlBlock {
         // add main thread to the process
         let mut process_inner = process.inner_exclusive_access();
         process_inner.tasks.push(Some(Arc::clone(&task)));
+        // process_inner.need.push(Vec::new());
+        // process_inner.allocation.push(Vec::new());
+
         drop(process_inner);
         insert_into_pid2process(process.getpid(), Arc::clone(&process));
         // add main thread to scheduler
@@ -245,6 +260,10 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    deadlock_detect: false,
+                    available: Vec::new(),
+                    allocation: vec![Vec::new(); 1],
+                    need: vec![Vec::new(); 1],
                 })
             },
         });
@@ -267,6 +286,8 @@ impl ProcessControlBlock {
         // attach task to child process
         let mut child_inner = child.inner_exclusive_access();
         child_inner.tasks.push(Some(Arc::clone(&task)));
+        // child_inner.allocation.push(Vec::new());
+        // child_inner.need.push(Vec::new());
         drop(child_inner);
         // modify kstack_top in trap_cx of this thread
         let task_inner = task.inner_exclusive_access();

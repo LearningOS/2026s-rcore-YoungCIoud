@@ -4,7 +4,7 @@ use crate::{
     fs::{OpenFlags, open_file},
     mm::{translated_byte_buffer, translated_ref, translated_refmut, translated_str},
     task::{
-        SignalFlags, current_process, current_task, current_user_token, exit_current_and_run_next, pid2process, suspend_current_and_run_next
+        SignalFlags, current_process, current_task, current_user_token, dealloc_resource, exit_current_and_run_next, pid2process, suspend_current_and_run_next
     }, timer::get_time_us, tools::write_data_buffers,
 };
 use alloc::{string::String, sync::Arc, vec::Vec};
@@ -23,6 +23,15 @@ pub fn sys_exit(exit_code: i32) -> ! {
     trace!(
         "kernel:pid[{}] sys_exit",
         current_task().unwrap().process.upgrade().unwrap().getpid()
+    );
+    dealloc_resource(
+        current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .res
+        .as_ref()
+        .unwrap()
+        .tid
     );
     exit_current_and_run_next(exit_code);
     panic!("Unreachable in sys_exit!");

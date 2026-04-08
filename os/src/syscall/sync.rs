@@ -1,5 +1,5 @@
 use crate::sync::{Condvar, Mutex, MutexBlocking, MutexSpin, Semaphore};
-use crate::task::{block_current_and_run_next, current_process, current_task};
+use crate::task::{add_resource, add_resource_need, alloc_resource, block_current_and_run_next, check_deadlock, current_process, current_task, set_deadlock_detet};
 use crate::timer::{add_timer, get_time_ms};
 use alloc::sync::Arc;
 /// sleep syscall
@@ -49,30 +49,47 @@ pub fn sys_mutex_create(blocking: bool) -> isize {
         .map(|(id, _)| id)
     {
         process_inner.mutex_list[id] = mutex;
+
+        drop(process_inner);
+        add_resource(id, 1);
+        
         id as isize
     } else {
+        let id = process_inner.mutex_list.len();
         process_inner.mutex_list.push(mutex);
-        process_inner.mutex_list.len() as isize - 1
+
+        drop(process_inner);
+        add_resource(id, 1);
+
+        id as isize
     }
 }
 /// mutex lock syscall
 pub fn sys_mutex_lock(mutex_id: usize) -> isize {
+    let tid = current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .res
+        .as_ref()
+        .unwrap()
+        .tid;
     trace!(
         "kernel:pid[{}] tid[{}] sys_mutex_lock",
         current_task().unwrap().process.upgrade().unwrap().getpid(),
-        current_task()
-            .unwrap()
-            .inner_exclusive_access()
-            .res
-            .as_ref()
-            .unwrap()
-            .tid
+        tid
     );
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
     let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
     drop(process_inner);
     drop(process);
+
+    add_resource_need(tid, mutex_id, 1);
+    if check_deadlock(tid) {
+        alloc_resource(tid, mutex_id, 1);
+    } else {
+        return -0xdead;
+    }
     mutex.lock();
     0
 }
@@ -120,12 +137,21 @@ pub fn sys_semaphore_create(res_count: usize) -> isize {
         .map(|(id, _)| id)
     {
         process_inner.semaphore_list[id] = Some(Arc::new(Semaphore::new(res_count)));
+
+        drop(process_inner);
+        add_resource(id, res_count);
+
         id
     } else {
+        let rid = process_inner.semaphore_list.len();
         process_inner
             .semaphore_list
             .push(Some(Arc::new(Semaphore::new(res_count))));
-        process_inner.semaphore_list.len() - 1
+
+        drop(process_inner);
+        add_resource(rid, res_count);
+
+        rid
     };
     id as isize
 }
@@ -151,21 +177,29 @@ pub fn sys_semaphore_up(sem_id: usize) -> isize {
 }
 /// semaphore down syscall
 pub fn sys_semaphore_down(sem_id: usize) -> isize {
+    let tid = current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .res
+        .as_ref()
+        .unwrap()
+        .tid;
     trace!(
         "kernel:pid[{}] tid[{}] sys_semaphore_down",
         current_task().unwrap().process.upgrade().unwrap().getpid(),
-        current_task()
-            .unwrap()
-            .inner_exclusive_access()
-            .res
-            .as_ref()
-            .unwrap()
-            .tid
+        tid,
     );
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
     let sem = Arc::clone(process_inner.semaphore_list[sem_id].as_ref().unwrap());
     drop(process_inner);
+
+    add_resource_need(tid, sem_id, 1);
+    if check_deadlock(tid) {
+        alloc_resource(tid, sem_id, 1);
+    } else {
+        return -0xdead;
+    }
     sem.down();
     0
 }
@@ -245,7 +279,15 @@ pub fn sys_condvar_wait(condvar_id: usize, mutex_id: usize) -> isize {
 /// enable deadlock detection syscall
 ///
 /// YOUR JOB: Implement deadlock detection, but might not all in this syscall
-pub fn sys_enable_deadlock_detect(_enabled: usize) -> isize {
-    trace!("kernel: sys_enable_deadlock_detect NOT IMPLEMENTED");
-    -1
+pub fn sys_enable_deadlock_detect(enabled: usize) -> isize {
+    trace!("kernel: sys_enable_deadlock_detect");
+    let enabled = if enabled == 1 {
+        true
+    } else if enabled == 0 {
+        false
+    } else {
+        return -1
+    };
+
+    set_deadlock_detet(enabled)
 }
