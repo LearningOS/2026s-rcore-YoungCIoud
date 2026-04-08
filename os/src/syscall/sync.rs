@@ -1,5 +1,5 @@
 use crate::sync::{Condvar, Mutex, MutexBlocking, MutexSpin, Semaphore};
-use crate::task::{add_resource, add_resource_need, alloc_resource, block_current_and_run_next, check_deadlock, current_process, current_task, deadlock_detect, dealloc_resource, set_deadlock_detet};
+use crate::task::{add_resource, block_current_and_run_next, check_deadlock, current_process, current_task, deadlock_detect, dealloc_resource, set_deadlock_detet};
 use crate::timer::{add_timer, get_time_ms};
 use alloc::sync::Arc;
 /// sleep syscall
@@ -84,31 +84,25 @@ pub fn sys_mutex_lock(mutex_id: usize) -> isize {
     drop(process_inner);
     drop(process);
 
-    if deadlock_detect() {
-        add_resource_need(tid, mutex_id, 1);
-        if !check_deadlock() {
-            add_resource_need(tid, mutex_id, -1);
-            return -0xdead;
-        }
+    if deadlock_detect() && !check_deadlock(tid, mutex_id, 1){
+        return -0xdead
     }
     mutex.lock();
-    if deadlock_detect() {
-        alloc_resource(tid, mutex_id, 1);
-    }
     0
 }
 /// mutex unlock syscall
 pub fn sys_mutex_unlock(mutex_id: usize) -> isize {
+    let tid = current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .res
+        .as_ref()
+        .unwrap()
+        .tid;
     trace!(
         "kernel:pid[{}] tid[{}] sys_mutex_unlock",
         current_task().unwrap().process.upgrade().unwrap().getpid(),
-        current_task()
-            .unwrap()
-            .inner_exclusive_access()
-            .res
-            .as_ref()
-            .unwrap()
-            .tid
+        tid
     );
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
@@ -117,7 +111,7 @@ pub fn sys_mutex_unlock(mutex_id: usize) -> isize {
     drop(process);
     mutex.unlock();
     if deadlock_detect() {
-        dealloc_resource(mutex_id, 1);
+        dealloc_resource(tid, mutex_id, 1);
     }
     0
 }
@@ -164,16 +158,17 @@ pub fn sys_semaphore_create(res_count: usize) -> isize {
 }
 /// semaphore up syscall
 pub fn sys_semaphore_up(sem_id: usize) -> isize {
+    let tid = current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .res
+        .as_ref()
+        .unwrap()
+        .tid;
     trace!(
         "kernel:pid[{}] tid[{}] sys_semaphore_up",
         current_task().unwrap().process.upgrade().unwrap().getpid(),
-        current_task()
-            .unwrap()
-            .inner_exclusive_access()
-            .res
-            .as_ref()
-            .unwrap()
-            .tid
+        tid
     );
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
@@ -181,7 +176,7 @@ pub fn sys_semaphore_up(sem_id: usize) -> isize {
     drop(process_inner);
     sem.up();
     if deadlock_detect() {
-        dealloc_resource(sem_id, 1);
+        dealloc_resource(tid, sem_id, 1);
     }
     0
 }
@@ -204,17 +199,10 @@ pub fn sys_semaphore_down(sem_id: usize) -> isize {
     let sem = Arc::clone(process_inner.semaphore_list[sem_id].as_ref().unwrap());
     drop(process_inner);
 
-    if deadlock_detect() {
-        add_resource_need(tid, sem_id, 1);
-        if !check_deadlock() {
-            add_resource_need(tid, sem_id, -1);
-            return -0xdead;
-        }
+    if deadlock_detect() && !check_deadlock(tid, sem_id, 1) {
+        return -0xdead
     }
     sem.down();
-    if deadlock_detect() {
-        alloc_resource(tid, sem_id, 1);
-    }
     0
 }
 /// condvar create syscall

@@ -213,22 +213,22 @@ fn guarantee_capacity() {
     let res_num = inner.available.len();
     let thread_num = inner.tasks.len();
 
-    // for allocation in &mut inner.allocation {
-    //     while allocation.len() < res_num {
-    //         allocation.push(0);
-    //     }
-    // }
-    // while inner.allocation.len() < thread_num {
-    //     inner.allocation.push(vec![0usize; res_num]);
-    // }
+    for allocation in &mut inner.allocation {
+        while allocation.len() < res_num {
+            allocation.push(0);
+        }
+    }
+    while inner.allocation.len() < thread_num {
+        inner.allocation.push(vec![0usize; res_num]);
+    }
 
-    for need in &mut inner.need {
+    for need in &mut inner.request {
         while need.len() < res_num {
             need.push(0);
         }
     }
-    while inner.need.len() < thread_num {
-        inner.need.push(vec![0usize; res_num]);
+    while inner.request.len() < thread_num {
+        inner.request.push(vec![0usize; res_num]);
     }
 }
 
@@ -255,30 +255,38 @@ pub fn add_resource(rid: usize, num: usize) {
     inner.available[rid] = num;
 }
 
-/// 线程 tid 需要 num 个 rid 资源
-pub fn add_resource_need(tid: usize, rid: usize, num: isize) {
+// /// 线程 tid 需要 num 个 rid 资源
+// pub fn add_resource_need(tid: usize, rid: usize, num: isize) {
+//     guarantee_capacity();
+
+//     let process = current_process();
+//     let mut inner = process.inner_exclusive_access();
+
+//     if num < 0 {
+//         let num = -num;
+//         inner.request[tid][rid] -= num as usize;
+//     } else {
+//         inner.request[tid][rid] += num as usize;
+//     }
+// }
+
+/// check if tid can get resource safely
+pub fn check_deadlock(tid: usize, rid: usize, num: usize) -> bool {
     guarantee_capacity();
 
     let process = current_process();
     let mut inner = process.inner_exclusive_access();
 
-    if num < 0 {
-        let num = -num;
-        inner.need[tid][rid] -= num as usize;
+    if inner.available[rid] >= num {
+        inner.available[rid] -= num;
+        inner.allocation[tid][rid] += num;
     } else {
-        inner.need[tid][rid] += num as usize;
+        inner.request[tid][rid] += num;
     }
-}
-
-/// check if tid can get resource safely
-pub fn check_deadlock() -> bool {
-    guarantee_capacity();
-
-    let process = current_process();
-    let inner = process.inner_exclusive_access();
     
-    let need = &inner.need;
-    let work = &inner.available;
+    let request = &inner.request;
+    let alloc = &inner.allocation;
+    let mut work = inner.available.clone();
     let mut finish: Vec<_> = inner
         .tasks
         .clone()
@@ -296,7 +304,7 @@ pub fn check_deadlock() -> bool {
             }
 
             for rid in 0..res_num {
-                if need[tid][rid] > work[rid] {
+                if request[tid][rid] > work[rid] {
                     continue 'outter;
                 }
             }
@@ -306,6 +314,9 @@ pub fn check_deadlock() -> bool {
 
         if let Some(tid) = found {
             finish[tid] = true;
+            for rid in 0..res_num {
+                work[rid] += alloc[tid][rid];
+            }
         } else if finish.iter().find(|ok| !*ok).is_some() {
             return false;
         } else {
@@ -314,23 +325,24 @@ pub fn check_deadlock() -> bool {
     }
 }
 
-/// 分配 num 个 rid 资源给线程 tid
-pub fn alloc_resource(tid: usize, rid: usize, num: usize) {
-    guarantee_capacity();
+// /// 分配 num 个 rid 资源给线程 tid
+// pub fn alloc_resource(tid: usize, rid: usize, num: usize) {
+//     guarantee_capacity();
 
-    let process = current_process();
-    let mut inner = process.inner_exclusive_access();
+//     let process = current_process();
+//     let mut inner = process.inner_exclusive_access();
 
-    assert!(inner.available[rid] >= num);
+//     assert!(inner.available[rid] >= num);
 
-    inner.available[rid] -= num;
-    inner.need[tid][rid] -= num;
-    // inner.allocation[tid][rid] += num;
-}
+//     inner.available[rid] -= num;
+//     inner.request[tid][rid] -= num;
+//     inner.allocation[tid][rid] += num;
+// }
 
-/// 归还 rid 资源
-pub fn dealloc_resource(rid: usize, num: usize) {
+/// 归还 tid 的 num 个 rid 资源
+pub fn dealloc_resource(tid: usize, rid: usize, num: usize) {
     let process = current_process();
     let mut inner = process.inner_exclusive_access();
     inner.available[rid] += num;
+    inner.allocation[tid][rid] -= num;
 }
